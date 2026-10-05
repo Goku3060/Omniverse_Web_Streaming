@@ -75,6 +75,9 @@ export default function App() {
         ]);
     }, []);
 
+    const addLogRef = useRef(addLog);
+    addLogRef.current = addLog;
+
     useEffect(() => {
         let active = true;
 
@@ -85,11 +88,11 @@ export default function App() {
             if (message.status === EventStatus.SUCCESS) {
                 setConnection('connected');
                 setConnectionMessage('Connected to Kit (H.264 streaming)');
-                addLog('Connected to Omniverse Kit stream', 'system');
+                addLogRef.current('Connected to Omniverse Kit stream', 'system');
             } else if (message.status === EventStatus.ERROR) {
                 setConnection('error');
                 setConnectionMessage(getEventError(message));
-                addLog(`Connection error: ${getEventError(message)}`, 'system');
+                addLogRef.current(`Connection error: ${getEventError(message)}`, 'system');
             }
         };
 
@@ -107,20 +110,18 @@ export default function App() {
                     audioElementId: 'remote-audio',
                     signalingServer,
                     signalingPort: 49221,
-                    width: 1920,
-                    height: 1080,
                     fps: 60,
                     codec: VideoCodec.H264,
                     codecList: ['H264'],
-                    maxReconnects: 5,
+                    maxReconnects: 10,
                     reconnectDelay: 2000,
-                    connectivityTimeout: 5000,
+                    connectivityTimeout: 10000,
                     onStart: onConnectResult,
                     onStop: () => {
                         if (active) {
                             setConnection('error');
                             setConnectionMessage('Kit stream disconnected');
-                            addLog('Kit stream disconnected', 'system');
+                            addLogRef.current('Kit stream disconnected', 'system');
                         }
                     },
                     onStreamStatusChange: (status: StreamStatus) => {
@@ -154,12 +155,12 @@ export default function App() {
                                 const newCount = payload.count;
                                 setContainerCount(newCount);
                                 if (payload.reset) {
-                                    addLog('Container bin cleared (Count: 0)', 'reset');
+                                    addLogRef.current('Container bin cleared (Count: 0)', 'reset');
                                 } else {
                                     setLastArrivalFlash(true);
                                     setTimeout(() => setLastArrivalFlash(false), 800);
                                     const pathStr = typeof payload?.box_path === 'string' ? payload.box_path.split('/').pop() : 'Package';
-                                    addLog(`📥 ${pathStr} delivered into container! (Total: ${newCount})`, 'arrival');
+                                    addLogRef.current(`📥 ${pathStr} delivered into container! (Total: ${newCount})`, 'arrival');
                                 }
                             }
                             return;
@@ -175,10 +176,10 @@ export default function App() {
                             if (payload.result === 'success') {
                                 setSpawnedCount(prev => prev + 1);
                                 const path = typeof payload.path === 'string' ? payload.path.split('/').pop() : 'Box';
-                                addLog(`📦 ${path} dropped onto conveyor intake`, 'spawn');
+                                addLogRef.current(`📦 ${path} dropped onto conveyor intake`, 'spawn');
                             } else {
                                 const err = typeof payload.error === 'string' ? payload.error : 'Failed to drop package';
-                                addLog(`❌ ${err}`, 'system');
+                                addLogRef.current(`❌ ${err}`, 'system');
                             }
                             return;
                         }
@@ -186,14 +187,14 @@ export default function App() {
                         // 3. Reset container result
                         if (eventType === RESET_CONTAINER_RESULT) {
                             setContainerCount(0);
-                            addLog('Container bin cleared to 0', 'reset');
+                            addLogRef.current('Container bin cleared to 0', 'reset');
                             return;
                         }
 
                         // 4. Set conveyor speed result
                         if (eventType === SET_SPEED_RESULT) {
                             if (typeof payload.speed === 'number') {
-                                addLog(`⚡ Conveyor surface speed set to ${payload.speed} mm/s`, 'speed');
+                                addLogRef.current(`⚡ Conveyor surface speed set to ${payload.speed} mm/s`, 'speed');
                             }
                             return;
                         }
@@ -220,7 +221,8 @@ export default function App() {
                 console.error('Failed to terminate Kit stream:', error);
             });
         };
-    }, [addLog, stream]);
+    }, [stream]);
+
 
     // Watchdog: detect if WebRTC decoded frames stall/freeze while connected
     useEffect(() => {
@@ -529,10 +531,27 @@ export default function App() {
 
                         {connection !== 'connected' && (
                             <div className="viewport-overlay">
-                                <div className="overlay-spinner" />
-                                <h3 className="overlay-title">Connecting to Omniverse Kit</h3>
-                                <p className="overlay-desc">{connectionMessage}</p>
-                                <span className="overlay-sub">WebRTC Stream Port: 49221 • H.264 Video</span>
+                                {connection === 'error' ? (
+                                    <>
+                                        <div style={{ fontSize: '36px' }}>⚠️</div>
+                                        <h3 className="overlay-title">Stream Disconnected</h3>
+                                        <p className="overlay-desc">{connectionMessage}</p>
+                                        <button
+                                            className="primary-drop-button"
+                                            style={{ width: 'auto', padding: '10px 24px', marginTop: '12px' }}
+                                            onClick={() => window.location.reload()}
+                                        >
+                                            Reconnect Stream
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="overlay-spinner" />
+                                        <h3 className="overlay-title">Connecting to Omniverse Kit</h3>
+                                        <p className="overlay-desc">{connectionMessage}</p>
+                                        <span className="overlay-sub">WebRTC Stream Port: 49221 • H.264 Video</span>
+                                    </>
+                                )}
                             </div>
                         )}
                     </div>

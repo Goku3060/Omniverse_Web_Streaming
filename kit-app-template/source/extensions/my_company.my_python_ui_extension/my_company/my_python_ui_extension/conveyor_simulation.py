@@ -337,10 +337,27 @@ def check_container_arrivals(stage: Usd.Stage) -> list[dict]:
 
         try:
             xformable = UsdGeom.Xformable(prim)
-            world_transform = xformable.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+            time_code = Usd.TimeCode.Default()
+            if omni.timeline:
+                try:
+                    tl = omni.timeline.get_timeline_interface()
+                    if tl and tl.is_playing():
+                        time_code = Usd.TimeCode(tl.get_current_time() * stage.GetTimeCodesPerSecond())
+                except Exception:
+                    pass
+
+            world_transform = xformable.ComputeLocalToWorldTransform(time_code)
             translation = world_transform.ExtractTranslation()
             curr_x = translation[0]
             curr_elev = translation[1] if is_y_up else translation[2]
+
+            # Fallback check against default timecode if time_code was not at default
+            if time_code != Usd.TimeCode.Default() and curr_x == -150.0:
+                wt_default = xformable.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+                tr_def = wt_default.ExtractTranslation()
+                if tr_def[0] != -150.0:
+                    curr_x = tr_def[0]
+                    curr_elev = tr_def[1] if is_y_up else tr_def[2]
 
             # Box has rolled off conveyor and fallen into the container
             if curr_x >= min_x_threshold and curr_elev <= max_elev_threshold:
