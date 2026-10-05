@@ -47,6 +47,16 @@ class SetupExtension(omni.ext.IExt):
             return
         # get auto load stage name
         stage_url = self._settings.get_as_string("/app/auto_load_usd")
+        if not stage_url:
+            import sys
+            for arg in sys.argv:
+                if arg.endswith(".usd") or arg.endswith(".usda"):
+                    stage_url = arg
+                    break
+        if not stage_url:
+            conveyor_usda = Path("D:/Omniverse_learning/Conveyor_Simulation.usda")
+            if conveyor_usda.exists():
+                stage_url = str(conveyor_usda)
 
         # check if setup have benchmark macro file to activate - ignore setup
         # auto_load_usd name, in order to run proper benchmark.
