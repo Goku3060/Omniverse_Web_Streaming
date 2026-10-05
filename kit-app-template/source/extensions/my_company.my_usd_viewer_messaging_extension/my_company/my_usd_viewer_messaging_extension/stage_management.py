@@ -12,6 +12,7 @@ import traceback
 
 from pxr import UsdGeom, Usd
 
+import time
 import carb
 import carb.dictionary
 import carb.events
@@ -19,6 +20,14 @@ import omni.usd
 import omni.kit.app
 import omni.kit.livestream.messaging as messaging
 from my_company.my_python_ui_extension.cube_spawner import spawn_cube
+from my_company.my_python_ui_extension.conveyor_simulation import (
+    drop_package,
+    check_container_arrivals,
+    reset_container,
+    set_conveyor_speed,
+    get_delivered_count,
+    ensure_timeline_playing,
+)
 
 from carb.eventdispatcher import get_eventdispatcher
 from omni.kit.viewport.utility import get_active_viewport_camera_string
@@ -31,6 +40,7 @@ class StageManager:
         self._is_external_update: bool = False
         self._camera_attrs = {}
         self._subscriptions = []
+        self._last_arrival_check: float = 0.0
 
         # -- register outgoing events/messages
         outgoing = [
@@ -44,6 +54,14 @@ class StageManager:
             "resetStageResponse",
             # response to a cube spawn request from the React client.
             "spawnCubeResult",
+            # response to dropping a package on the conveyor
+            "dropPackageResult",
+            # response to resetting the container
+            "resetContainerResult",
+            # response to updating conveyor speed
+            "setConveyorSpeedResult",
+            # real-time telemetry push when a box drops into the container bin
+            "containerCountUpdate",
         ]
 
         for o in outgoing:
@@ -61,10 +79,16 @@ class StageManager:
             'selectPrimsRequest': self._on_select_prims,
             # request to make primitives pickable
             'makePrimsPickable': self._on_make_pickable,
-            # request to make primitives pickable
+            # request to reset camera
             'resetStage': self._on_reset_camera,
-            # request to spawn a cube in the current USD stage.
-            'spawnCubeRequest': self._on_spawn_cube,
+            # request to spawn a cube in the current USD stage (aliases to dropPackage)
+            'spawnCubeRequest': self._on_drop_package,
+            # industrial conveyor package drop
+            'dropPackageRequest': self._on_drop_package,
+            # empty collection container
+            'resetContainerRequest': self._on_reset_container,
+            # adjust conveyor belt speed
+            'setConveyorSpeedRequest': self._on_set_conveyor_speed,
         }
 
         ed = get_eventdispatcher()
@@ -80,6 +104,11 @@ class StageManager:
                     on_event=handler,
                 )
             )
+
+        # -- subscribe to update event stream for real-time physics arrival detection
+        self._update_sub = omni.kit.app.get_app().get_update_event_stream().create_subscription_to_pop(
+            self._on_update, name="StageManager:ConveyorArrivalMonitor"
+        )
 
         # -- subscribe to stage events
         usd_context = omni.usd.get_context()
@@ -201,6 +230,9 @@ class StageManager:
                 for attr in prim.GetAttributes():
                     self._camera_attrs[attr.GetName()] = attr.Get()
 
+            # Ensure physics timeline is playing
+            ensure_timeline_playing()
+
     def _on_stage_event_selection_changed(self, event):
         # If the selection changed came from an external event,
         # we don't need to let the streaming client know because it
@@ -213,6 +245,32 @@ class StageManager:
 
             get_eventdispatcher().dispatch_event("stageSelectionChanged", payload=payload)
             carb.log_info(f"Selection changed: Path to USD prims currently selected = {omni.usd.get_context().get_selection().get_selected_prim_paths()}")
+
+    def _on_update(self, event: carb.events.IEvent) -> None:
+        """Periodic simulation tick observer: checks for package arrivals in collection bin."""
+        now = time.time()
+        # Evaluate at ~20 Hz to avoid overhead while maintaining instantaneous response
+        if now - self._last_arrival_check < 0.05:
+            return
+        self._last_arrival_check = now
+
+        stage = omni.usd.get_context().get_stage()
+        if not stage:
+            return
+
+        try:
+            arrivals = check_container_arrivals(stage)
+            for arrival in arrivals:
+                # Real-time unsolicited push event to streaming WebRTC client
+                payload = {
+                    "count": arrival["total_count"],
+                    "total_count": arrival["total_count"],
+                    "box_path": arrival["box_path"],
+                    "timestamp": arrival["timestamp"],
+                }
+                get_eventdispatcher().dispatch_event("containerCountUpdate", payload=payload)
+        except Exception:
+            carb.log_warn(f"Error checking container arrivals: {traceback.format_exc()}")
 
     def _on_reset_camera(self, event: carb.events.IEvent):
         """
@@ -245,25 +303,74 @@ class StageManager:
 
         get_eventdispatcher().dispatch_event("resetStageResponse", payload=payload)
 
-    def _on_spawn_cube(self, event: carb.events.IEvent) -> None:
-        """Create a uniquely named cube and report the result to the client."""
+    def _on_drop_package(self, event: carb.events.IEvent) -> None:
+        """Drop an industrial package onto the conveyor belt."""
         stage = omni.usd.get_context().get_stage()
         if stage is None:
             payload = {"result": "error", "error": "No USD stage is open"}
         else:
             try:
-                cube_path = spawn_cube(stage)
-                payload = {"result": "success", "path": cube_path}
+                pkg_path = drop_package(stage)
+                payload = {
+                    "result": "success",
+                    "path": pkg_path,
+                    "total_delivered": get_delivered_count(),
+                }
             except Exception:
                 carb.log_error(
-                    f"spawnCubeRequest handler failed: {traceback.format_exc()}"
+                    f"dropPackageRequest handler failed: {traceback.format_exc()}"
                 )
                 payload = {
                     "result": "error",
-                    "error": "Failed to spawn cube in the USD stage",
+                    "error": "Failed to drop package on conveyor",
                 }
 
+        get_eventdispatcher().dispatch_event("dropPackageResult", payload=payload)
+        # Also dispatch spawnCubeResult for backward compatibility
         get_eventdispatcher().dispatch_event("spawnCubeResult", payload=payload)
+
+    def _on_reset_container(self, event: carb.events.IEvent) -> None:
+        """Empty all packages from the container and reset count."""
+        stage = omni.usd.get_context().get_stage()
+        if stage is None:
+            payload = {"result": "error", "error": "No USD stage is open"}
+        else:
+            try:
+                reset_container(stage)
+                payload = {"result": "success", "count": 0}
+            except Exception:
+                carb.log_error(
+                    f"resetContainerRequest handler failed: {traceback.format_exc()}"
+                )
+                payload = {"result": "error", "error": "Failed to reset container"}
+
+        get_eventdispatcher().dispatch_event("resetContainerResult", payload=payload)
+        # Immediately notify client of 0 count
+        get_eventdispatcher().dispatch_event("containerCountUpdate", payload={"count": 0, "total_count": 0, "reset": True})
+
+    def _on_set_conveyor_speed(self, event: carb.events.IEvent) -> None:
+        """Adjust the conveyor linear surface velocity."""
+        stage = omni.usd.get_context().get_stage()
+        speed = 140.0
+        if "speed" in event.payload:
+            try:
+                speed = float(event.payload["speed"])
+            except (ValueError, TypeError):
+                pass
+
+        if stage is None:
+            payload = {"result": "error", "error": "No USD stage is open"}
+        else:
+            try:
+                success = set_conveyor_speed(stage, speed)
+                payload = {"result": "success" if success else "error", "speed": speed}
+            except Exception:
+                carb.log_error(
+                    f"setConveyorSpeedRequest handler failed: {traceback.format_exc()}"
+                )
+                payload = {"result": "error", "error": "Failed to set conveyor speed"}
+
+        get_eventdispatcher().dispatch_event("setConveyorSpeedResult", payload=payload)
 
     def _on_make_pickable(self, event: carb.events.IEvent):
         """
@@ -272,19 +379,8 @@ class StageManager:
         Adds the provided primitives to the set of selectable objects in the viewport.
         Sends 'makePrimsPickableResponse' back to streamer with
         current success status.
-
-        An empty or missing "paths" key is treated as a clean no-op so a client
-        sending `{"type": "makePrimsPickable", "payload": {}}` cannot cause an
-        UnboundLocalError. Any unexpected exception is logged server-side with
-        its full traceback and reported to the client only as a generic message
-        so internal details (file paths, variable names, stack frames) are not
-        leaked to the streaming client.
         """
-        # Add the provided paths to the set of pickable prims.
         ctx = omni.usd.get_context()
-        # Initialize `paths` BEFORE the try/conditional so a missing or empty
-        # "paths" key falls through as a no-op instead of raising
-        # UnboundLocalError when the `for path in paths:` loop is reached.
         paths = []
         try:
             if "paths" in event.payload:
@@ -296,9 +392,6 @@ class StageManager:
             for path in paths:
                 ctx.set_pickable(path, True)
         except Exception:
-            # Log full server-side detail, but return a generic message to the
-            # client to avoid leaking internal variable names, file paths or
-            # stack frames over the streaming WebSocket.
             carb.log_error(
                 f"makePrimsPickable handler failed: {traceback.format_exc()}"
             )
@@ -311,7 +404,10 @@ class StageManager:
     def on_shutdown(self):
         """This is called every time the extension is deactivated. It is used
         to clean up the extension state."""
-        # Reseting the state.
+        # Clean up update subscription
+        self._update_sub = None
+        # Resetting the state.
         self._subscriptions.clear()
         self._is_external_update: bool = False
         self._camera_attrs.clear()
+

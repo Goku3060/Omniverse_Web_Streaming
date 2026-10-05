@@ -141,6 +141,12 @@ class SetupExtension(omni.ext.IExt):
                     sun.CreateIntensityAttr(2000.0)
                     sun.CreateAngleAttr(0.53)
                     UsdGeom.XformCommonAPI(sun.GetPrim()).SetRotate((315, 0, 0))
+
+                try:
+                    from my_company.my_python_ui_extension.conveyor_simulation import setup_conveyor_scene
+                    setup_conveyor_scene(stage)
+                except Exception as e:
+                    carb.log_error(f"Failed to setup conveyor scene: {e}")
         else:
             carb.log_warn(
                 f"SetupExtension: Timed out waiting to open stage {url}")
