@@ -1,0 +1,39 @@
+# Top-level unrelated projects in Omniverse_learning
+/Factory_Lite/
+/PhysicalAI_SceneAssembly/
+/ovstream/
+/.agents/
+
+# Kit app template build, package and cache directories
+kit-app-template/_*/
+kit-app-template/.git_upstream_backup/
+kit-app-template/.vs/
+kit-app-template/.vscode/settings.json
+kit-app-template/**/.vscode/ipch/
+kit-app-template/.idea/
+kit-app-template/.nvidia-omniverse/
+kit-app-template/.local/
+kit-app-template/.cache/
+kit-app-template/.omniverse_eula_accepted.txt
+kit-app-template/PACKAGE-DEPS.yaml
+kit-app-template/*.packman.xml.user
+kit-app-template/deps/**/user.toml
+kit-app-template/*.etli
+kit-app-template/data/
+kit-app-template/logs/
+
+# React / Vite web client artifacts & dependencies
+Poc_test/node_modules/
+Poc_test/dist/
+Poc_test/dist-ssr/
+Poc_test/.vite/
+Poc_test/*.local
+
+# Python compiled files & bytecode
+*.py[cod]
+__pycache__/
+*.log
+
+# OS metadata files
+.DS_Store
+Thumbs.db
