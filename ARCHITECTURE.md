@@ -35,7 +35,7 @@ flowchart LR
     Conveyor -->|containerCountUpdate / arrivals| Messaging
     Messaging -->|telemetry events| SDK
     SDK -->|onCustomEvent| React
-    Kit -->|NVENC H.264 stream (720p)| SDK
+    Kit -->|NVENC H.264 720p stream| SDK
     SDK -->|HTML5 video element| React
     ViewerSetup -->|loads stage and viewport layout| Kit
 ```

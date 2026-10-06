@@ -1,15 +1,16 @@
-# Omniverse Scene Control Architecture
+# Omniverse Digital Twin Conveyor & Scene Control Architecture
 
 ## Purpose
 
 This project connects a React web client to a running NVIDIA Omniverse Kit USD
-Viewer. The browser displays the Kit viewport as a WebRTC video stream and
-offers a **Spawn cube** control. Pressing the control sends a command through
-the stream's data channel; Kit authors the cube into the currently open USD
-stage and sends the created prim path back to the browser.
+PhysX simulation. The browser displays the Kit viewport as an interactive WebRTC video
+stream and offers logistics controls (**Drop Package**, **Conveyor Speed**, **Empty Bin**).
+Pressing a control sends a command through the stream's bidirectional data channel; Kit
+authors rigid body packages or modifies PhysX surface velocity on the open USD stage
+and streams live physics telemetry and package arrival counts back to the browser.
 
-The React application is a control surface for Kit, not a second scene
-renderer. USD remains authoritative on the Kit side.
+The React application is a control and telemetry surface for Kit, not a second scene
+renderer. USD and PhysX remain authoritative on the Kit side.
 
 ## System context
 
@@ -18,23 +19,24 @@ flowchart LR
     User[User]
     React[React client<br/>Vite + TypeScript]
     SDK[NVIDIA ov-web-rtc<br/>AppStreamer]
-    Kit[Kit USD Viewer Streaming]
+    Kit[Kit USD Viewer Streaming<br/>omni.kit.livestream.app]
     Messaging[USD Viewer Messaging Extension]
-    Spawner[Shared cube_spawner helper]
-    Stage[Active USD stage]
+    Conveyor[Conveyor & Physics Engine<br/>PhysX Surface Velocity API]
+    Stage[Active USD stage<br/>Conveyor_Simulation.usd / .usda]
     ViewerSetup[USD Viewer Setup Extension]
 
-    User -->|click Spawn cube| React
-    React -->|sendMessage: spawnCubeRequest| SDK
+    User -->|Drop Package / Change Speed| React
+    React -->|dropPackageRequest / setSpeed| SDK
     SDK <-->|WebRTC video + data messages| Kit
     Kit --> Messaging
-    Messaging -->|spawnCubeRequest event| Spawner
-    Spawner -->|Define Cube prim + transform| Stage
-    Stage -->|updated scene| Kit
-    Messaging -->|spawnCubeResult: path or error| SDK
+    Messaging -->|dispatch actions| Conveyor
+    Conveyor -->|Author RigidBody Packages + Surface Velocity| Stage
+    Stage -->|PhysX simulation updates| Conveyor
+    Conveyor -->|containerCountUpdate / arrivals| Messaging
+    Messaging -->|telemetry events| SDK
     SDK -->|onCustomEvent| React
-    Kit -->|rendered frames| SDK
-    SDK -->|video element| React
+    Kit -->|NVENC H.264 720p stream| SDK
+    SDK -->|HTML5 video element| React
     ViewerSetup -->|loads stage and viewport layout| Kit
 ```
 
@@ -43,16 +45,15 @@ flowchart LR
 | Component | Location | Responsibility |
 |---|---|---|
 | React entry point | `src/main.tsx` | Finds the page root and mounts the React application. |
-| React application | `src/App.tsx` | Builds the control panel, connects the WebRTC client, renders stream/status state, sends spawn requests, and processes Kit results. |
+| React application | `src/App.tsx` | Builds the control panel, connects the WebRTC client, renders stream/status state, sends logistics commands, and processes Kit telemetry. |
 | Page shell | `index.html` | Supplies the root element, metadata, and application entry module. |
 | Client styling | `src/index.css` | Styles the React control surface, status feedback, and video frame. |
 | WebRTC SDK | `@nvidia/ov-web-rtc` | Negotiates a direct Kit stream, attaches media to the video/audio elements, and transports application messages. |
-| Streaming application layer | `source/apps/my_company.my_usd_viewer_streaming.kit` | Extends the base Viewer application with Kit app streaming dependencies and settings. |
-| Base Viewer application | `source/apps/my_company.my_usd_viewer.kit` | Defines the Viewer application and includes the local cube extension dependency. |
-| Viewer setup extension | `my_company.my_usd_viewer_setup_extension` | Loads the configured USD stage, sets default stage lighting (`DomeLight` and `DistantLight`), and loads the Viewer layout. |
+| Streaming application layer | `source/apps/my_company.my_usd_viewer_streaming.kit` | Extends the base Viewer application with Kit app streaming dependencies and settings (720p stable). |
+| Base Viewer application | `source/apps/my_company.my_usd_viewer.kit` | Defines the Viewer application and includes the local extension dependencies. |
+| Viewer setup extension | `my_company.my_usd_viewer_setup_extension` | Loads the configured USD stage (`Conveyor_Simulation.usd`), sets default stage lighting, and loads the layout. |
 | Messaging extension | `my_company.my_usd_viewer_messaging_extension` | Bridges WebRTC custom messages to Kit event-dispatcher handlers and registers response events. |
-| Cube UI extension | `my_company.my_python_ui_extension` | Provides the in-Kit sample window and declares the shared cube helper dependency. |
-| Shared cube helper | `my_company.my_python_ui_extension.cube_spawner` | Creates unique, grounded cubes in a supplied USD stage. Both the local UI and the streamed message path use it. |
+| Conveyor Simulation extension | `my_company.my_python_ui_extension` | Manages PhysX surface velocity, package dynamic rigid bodies, and collection bin arrivals. |
 
 ### Dependency direction
 
@@ -68,61 +69,36 @@ my_company.my_usd_viewer_streaming.kit
 ```
 
 The streaming layer inherits the base Viewer dependencies and adds
-`omni.kit.livestream.app`. The messaging extension also depends directly on
-the cube extension because it calls the shared helper. Kit discovers these
+`omni.kit.livestream.app`. The messaging extension coordinates directly with
+the conveyor simulation extension to handle commands and stream telemetry. Kit discovers these
 local packages through the app's configured extension folders; `repo.bat
 build` stages them under `_build/windows-x86_64/release/`.
 
-## Spawn-cube message contract
+## Conveyor Simulation message contract
 
-The protocol uses named custom application messages over the existing Kit
-stream. The browser and Kit must use the same event names and payload shapes.
+The protocol uses named custom application messages over the WebRTC data channel.
+The browser and Kit use matching event types and payload shapes.
 
-### Request
+### 1. Drop Package Request (`dropPackageRequest`)
+- **Direction**: Browser $\to$ Kit
+- **Payload**: `{}`
+- **Action**: Kit defines a rigid body package box at the conveyor intake $(X = -310, Y = 155, Z = 1.4)$ with `PhysicsRigidBodyAPI`, `PhysicsCollisionAPI`, and `MassAPI`.
+- **Response**: `dropPackageResult` with `{ "result": "success", "path": "/World/Packages/Package_1" }`.
 
-```json
-{
-  "event_type": "spawnCubeRequest",
-  "payload": {}
-}
-```
+### 2. Set Conveyor Speed (`setConveyorSpeed`)
+- **Direction**: Browser $\to$ Kit
+- **Payload**: `{ "speed": 120.0 }`
+- **Action**: Dynamically updates `PhysxSurfaceVelocityAPI` on `SM_ConveyorBelt_A06_Belt_01` to `(0.0, -speed, 0.0)`.
 
-No client-supplied prim path, position, or USD code is accepted. Kit chooses
-the prim name and transform.
+### 3. Reset Container / Clear Bin (`resetContainerRequest`)
+- **Direction**: Browser $\to$ Kit
+- **Payload**: `{}`
+- **Action**: Removes delivered package prims from `/World/Packages` and resets internal counter to 0.
 
-### Success response
-
-```json
-{
-  "event_type": "spawnCubeResult",
-  "payload": {
-    "result": "success",
-    "path": "/World/Cube"
-  }
-}
-```
-
-Subsequent requests use the first unused path (`/World/Cube_1`,
-`/World/Cube_2`, and so on).
-
-### Error response
-
-```json
-{
-  "event_type": "spawnCubeResult",
-  "payload": {
-    "result": "error",
-    "error": "No USD stage is open"
-  }
-}
-```
-
-Unexpected USD authoring exceptions are logged in the Kit process with their
-traceback. The browser receives a generic error instead of internal details.
-
-`spawnCubeRequest` and `spawnCubeResult` are application messages (identified
-by `event_type`). They are not HTTP endpoints and do not use `fetch` or a
-separate REST service.
+### 4. Telemetry Broadcast (`containerCountUpdate`)
+- **Direction**: Kit $\to$ Browser
+- **Payload**: `{ "count": 5, "last_package": "/World/Packages/Package_5" }`
+- **Action**: Dispatched automatically every time a package arrives at the collection bin $(X \ge 340, Y \le 105)$.
 
 ## Request and response sequence
 
@@ -133,51 +109,41 @@ sequenceDiagram
     participant SDK as AppStreamer
     participant Stream as Kit WebRTC stream
     participant Bridge as Messaging extension
+    participant Conveyor as Conveyor Simulation
     participant USD as Active USD stage
 
-    User->>UI: Click Spawn cube
-    UI->>UI: Disable button; start 10 s result timer
-    UI->>SDK: sendMessage({event_type, payload})
+    User->>UI: Click Drop Package
+    UI->>UI: Update status; dispatch request
+    UI->>SDK: sendMessage({event_type: "dropPackageRequest", payload: {}})
     SDK->>Stream: Send custom application message
-    Stream->>Bridge: Dispatch spawnCubeRequest event
-    Bridge->>USD: Call shared spawn_cube(stage)
-    USD-->>Bridge: Created prim path (or failure)
-    Bridge->>Stream: Dispatch spawnCubeResult event
+    Stream->>Bridge: Dispatch dropPackageRequest event
+    Bridge->>Conveyor: drop_package(stage)
+    Conveyor->>USD: Author RigidBody Package at intake
+    USD-->>Conveyor: Created prim path
+    Conveyor-->>Bridge: Package path
+    Bridge->>Stream: Dispatch dropPackageResult event
     Stream-->>SDK: Deliver custom response
-    SDK-->>UI: onCustomEvent(spawnCubeResult)
-    UI->>UI: Clear timer; show path or error; enable button
-    USD-->>Stream: Updated rendered viewport frames
+    SDK-->>UI: onCustomEvent(dropPackageResult)
+    loop PhysX Simulation
+        USD->>Conveyor: Package travels along belt to bin
+        Conveyor->>Bridge: containerCountUpdate (count: N)
+        Bridge->>Stream: Deliver containerCountUpdate
+        Stream-->>UI: Update live package counter
+    end
+    USD-->>Stream: Rendered viewport frames (720p)
     Stream-->>UI: WebRTC video
 ```
 
-The SDK's `sendMessage` promise reports the send operation. The separate
-`spawnCubeResult` custom event reports the Kit-side result. The React client
-uses both: a send failure is shown immediately, while a successfully sent
-request remains pending until its result arrives or its 10-second timeout
-expires.
+## Conveyor physics & package authoring behavior
 
-## Cube authoring behavior
+`conveyor_simulation.py` handles scene setup and runtime physics:
 
-`cube_spawner.spawn_cube(stage)` is the single source of truth for cube
-creation:
-
-1. Create `/World` as an Xform if the stage does not already contain it.
-2. Find the first unused `/World/Cube*` prim path.
-3. Define a default USD cube at that path.
-4. Read the stage's up axis and set the cube center to half its size (100.0 units) along that
-   axis. This places the bottom face at ground height zero for Y-up and Z-up
-   stages.
-5. Move each later cube 150.0 stage units farther along X.
-6. Manually adjust the active viewport camera's translation and rotation via the USD Xform API to instantly face the new cube.
-7. Wrap the entire authoring operation in `Sdf.ChangeBlock()` so all prim, attribute, and camera changes coalesce into a single stage notice, preventing Hydra from repeatedly refitting acceleration structures (BVH) and stalling the renderer.
-8. Return the authored prim path.
-
-The operation changes the active in-memory USD stage. It does not save the
-stage to disk. Save/persistence is a separate authoring action.
-
-The Kit extension's own **Spawn Cube** button and the React control both call
-this helper. The in-Kit button is useful for local testing, but it is not the
-browser-to-Kit communication path.
+1. **Custom SimReady Belt Configuration**: Locates `/World/ConveyorBelt_A06_PR_NVD_01/Geometry/SM_ConveyorBelt_A06_Belt_01` and applies `PhysxSurfaceVelocityAPI`.
+2. **Velocity Vector Alignment**: Because the belt mesh local Y-axis aligns with World $-X$ with a scale factor of 3.58, setting local velocity to `(0.0, -speed, 0.0)` drives packages forward in World $+X$ towards the bin.
+3. **Collision Surfaces**: Guide rails, structural frame, and collection bin receive `CollisionAPI` directly so packages stay on the belt and remain inside the bin.
+4. **Intake Package Drop**: Packages are spawned at the intake with realistic dimensions, mass (2.5 kg), and random safety colors (Amazon yellow, cardboard brown, priority blue, etc.).
+5. **Collection Arrival Detection**: An update subscription monitors package positions each simulation step. When a package enters the bin discharge zone ($X \ge 340, Y \le 105$), it is marked as delivered and emits `containerCountUpdate`.
+6. **Camera Viewport Framing**: An automated camera framing routine (`frame_conveyor_camera`) centers the camera at $(20, 260, 480)$ with a $-25^\circ$ pitch to frame the entire conveyor pipeline.
 
 ## Connection and UI state
 
@@ -211,7 +177,12 @@ Kit files, then launch the built streaming layer with the target stage:
 & ".\_build\windows-x86_64\release\kit\kit.exe" `
   ".\_build\windows-x86_64\release\apps\my_company.my_usd_viewer_streaming.kit" `
   --no-window `
-  "--/app/auto_load_usd=D:\Omniverse_learning\Factory_Lite\Factory_Lite.usd"
+  "--/app/auto_load_usd=D:\Omniverse_learning\Conveyor_Simulation.usd" `
+  "--/app/renderer/resolution/width=1280" `
+  "--/app/renderer/resolution/height=720" `
+  "--/app/window/width=1280" `
+  "--/app/window/height=720" `
+  "--/exts/omni.kit.livestream.app/primaryStream/dynamicResize=false"
 ```
 
 In another PowerShell window:
@@ -223,7 +194,7 @@ npm run dev -- --host 127.0.0.1
 ```
 
 Open `http://127.0.0.1:5173` in Chromium. Wait for **Connected to Kit**, click
-**Spawn cube**, and expect a result such as `Cube created at /World/Cube`.
+**Drop Package**, and watch the rigid body box travel into the collection bin.
 Keep both the Kit process and the React development server running for the
 duration of the test.
 
@@ -237,9 +208,9 @@ public addresses, or provide TURN relays.
 | Symptom | Likely layer | First checks |
 |---|---|---|
 | Browser remains “Connecting to Kit” | Signaling/network | Confirm Kit is running the built `my_company.my_usd_viewer_streaming.kit`; use the reachable Kit host in `?server=`; check firewall and signaling errors in Kit and browser consoles. |
-| Stream connects but request times out | Data messaging | Check the Kit log for messaging-extension startup and `spawnCubeRequest` errors; verify both processes were rebuilt/restarted after Kit source changes. |
-| Browser shows a Kit error result | USD operation | Confirm a stage is open; inspect Kit logs for the server-side spawn traceback. |
-| Browser reports a path but cube is not visible | View/rendering | Confirm the same stage is displayed in the stream and inspect the stage for the returned prim path. The helper authors the cube in the active stage but does not save it. |
+| Stream connects but request times out | Data messaging | Check the Kit log for messaging-extension startup and `dropPackageRequest` errors; verify both processes were rebuilt/restarted after Kit source changes. |
+| Browser shows a Kit error result | USD operation | Confirm `Conveyor_Simulation.usd` is loaded; inspect Kit logs for server-side traceback. |
+| Packages slide sideways or stall | PhysX simulation | Verify belt mesh surface velocity vector matches local coordinates `(0.0, -speed, 0.0)`. |
 | “Connected to Kit” but black viewport | Rendering/media | Check Kit viewport, renderer/GPU startup, browser WebRTC media status, and console output independently of the data-channel command. |
 
 Avoid adding a second message bridge or HTTP API for this operation. Use the
@@ -253,12 +224,7 @@ The implementation has been validated with:
 - React TypeScript typecheck, production build, formatting check, and smoke
   test.
 - Kit release build.
-- Python UI extension test for cube placement and unique names.
-- Messaging extension test for the `spawnCubeRequest` handler, returned paths,
-  ground placement, and spacing.
-- A live local browser-to-Kit WebRTC test; clicking the React control returned
-  `Cube created at /World/Cube`.
-
-The production Vite build currently emits a large-bundle advisory because the
-WebRTC SDK is included in the client bundle. This is a size warning, not a
-build failure.
+- Python UI extension simulation for conveyor surface velocity and package physics.
+- Messaging extension test for the `dropPackageRequest` handler, returned paths,
+  and container count updates.
+- Live local browser-to-Kit WebRTC test streaming interactive PhysX simulation at 720p 60 FPS.

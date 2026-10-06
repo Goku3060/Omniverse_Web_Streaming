@@ -28,7 +28,7 @@ flowchart LR
     Conveyor -->|containerCountUpdate / arrivals| Bridge
     Bridge -->|telemetry events| SDK
     SDK -->|onCustomEvent| React
-    Kit -->|NVENC H.264 Stream (720p)| SDK
+    Kit -->|NVENC H.264 720p Stream| SDK
     SDK -->|HTML5 Video Element| React
 ```
 
