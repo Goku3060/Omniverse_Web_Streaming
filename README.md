@@ -41,7 +41,7 @@ flowchart LR
 | **Messaging Extension** | `kit-app-template/source/extensions/my_company.my_usd_viewer_messaging_extension` | Bridges WebRTC custom messages to Kit's event dispatcher. |
 | **Conveyor Simulation Extension** | `kit-app-template/source/extensions/my_company.my_python_ui_extension` | Manages PhysX surface velocity, package spawning, and collection bin arrivals. |
 | **Viewer Setup Extension** | `kit-app-template/source/extensions/my_company.my_usd_viewer_setup_extension` | Loads USD stages and sets up default lighting and layout. |
-| **USD Digital Twin Stage** | `Conveyor_Simulation.usd` | Modular industrial conveyor belt and collection bin stage. |
+| **USD Digital Twin Stage** | `Conveyor_Simulation.usd` / `Conveyor_Simulation.usda` | Modular industrial conveyor belt and collection bin stage. |
 
 ---
 
@@ -52,7 +52,7 @@ This project incorporates production-grade performance tuning based on official 
 1. **Hardware H.264 Codec Pinning**: Client enforces explicit `VideoCodec.H264` and `codecList: ['H264']` to prevent browser fallback to software decoders (VP8/VP9) and keyframe stalls.
 2. **Kit Run-Loop Rate Limiting**: Server run-loop is rate-limited (`rateLimitEnabled = true`, `rateLimitFrequency = 60`) to eliminate frame-pacing jitter and NVENC encoder starvation.
 3. **Livestream Core Tuning**: Bitrate capped at 10 Mbps (`videoBitrate = 10000000`, `videoFps = 60`) to prevent UDP packet drop bursts on port `48021`.
-4. **Dynamic Side-by-Side Placement & Camera Framing**: Cubes are spaced 130 units apart along the horizontal axis with alternating vibrant colors; camera centers on the row's midpoint and pulls back smoothly so all cubes remain framed side by side.
+4. **PhysX Conveyor Simulation & Perspective Framing**: Conveyor surface velocity drives rigid body packages dynamically along the belt into the collection bin, with automated camera framing keeping the entire logistics flow in view.
 5. **Decoded Frame Watchdog**: WebRTC client continuously verifies `getVideoPlaybackQuality().totalVideoFrames` to detect and surface decode freezes.
 6. **Pinned Video Layout**: Viewport CSS uses `position: absolute; inset: 0; object-fit: contain;` to avoid layout reflow thrashing during 60 FPS hardware video decoding.
 
@@ -111,9 +111,9 @@ Open **[http://127.0.0.1:5173/](http://127.0.0.1:5173/)** in your browser.
 ## Usage
 
 1. Wait for the status indicator in the web app to show **`Connected to Kit (Streaming active)`**.
-2. Click **`Spawn Cube`**.
-3. A uniquely colored cube will appear on the stage resting on the ground plane.
-4. Click **`Spawn Cube`** repeatedly to spawn multiple cubes placed neatly **side by side**, with the camera smoothly expanding its field of view to keep all cubes in frame.
+2. Click **`Drop Package`** to dispatch a rigid body package onto the conveyor intake.
+3. Observe real-time PhysX surface velocity carrying the package down the belt into the collection bin.
+4. Use the dashboard controls to adjust **Conveyor Velocity**, trigger **Auto-Cycle** for continuous parcel dispatch, or **Clear Bin** to reset.
 
 ---
 
