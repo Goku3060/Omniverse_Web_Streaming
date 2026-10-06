@@ -24,6 +24,6 @@ echo [INFO] Starting Vite Development Server...
 echo [INFO] Open http://127.0.0.1:5173 in Chrome or Edge
 echo.
 
-call npm run dev -- --host 127.0.0.1
+call npm run dev -- --host 0.0.0.0
 
 pause

@@ -111,6 +111,8 @@ export default function App() {
                     signalingServer,
                     signalingPort: 49221,
                     fps: 60,
+                    width: 1280,
+                    height: 720,
                     codec: VideoCodec.H264,
                     codecList: ['H264'],
                     maxReconnects: 10,
@@ -526,8 +528,8 @@ export default function App() {
                 {/* Right Interactive Viewport Area */}
                 <section className="viewport-container" aria-label="Conveyor Viewport">
                     <div className="video-wrapper">
-                        <video id="remote-video" autoPlay playsInline aria-label="Live Kit view" />
-                        <audio id="remote-audio" autoPlay />
+                        <video id="remote-video" autoPlay playsInline muted aria-label="Live Kit view" />
+                        <audio id="remote-audio" autoPlay muted />
 
                         {connection !== 'connected' && (
                             <div className="viewport-overlay">

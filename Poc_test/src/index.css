@@ -754,15 +754,24 @@ button {
     .dashboard-root {
         height: auto;
         min-height: 100vh;
+        padding: 8px;
+        gap: 8px;
     }
 
     .dashboard-body {
-        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column;
         height: auto;
     }
 
     .viewport-container {
-        height: 60vh;
-        min-height: 400px;
+        order: -1;
+        height: 42vh;
+        min-height: 250px;
+    }
+
+    .control-sidebar {
+        width: 100%;
+        overflow-y: visible;
     }
 }
