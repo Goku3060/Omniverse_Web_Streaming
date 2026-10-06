@@ -24,10 +24,10 @@ template_name = "omni.streaming_configuration"
 [settings.app]
 fastShutdown = true
 name = "My USD Viewer Streaming"  # Application Display Name
-renderer.resolution.height = 1080
-renderer.resolution.width = 1920
-window.height = 1080
-window.width = 1920
+renderer.resolution.height = 720
+renderer.resolution.width = 1280
+window.height = 720
+window.width = 1280
 
 [settings]
 rtx.post.aa.op = 3
@@ -37,7 +37,7 @@ rtx.verifyDriverVersion.enabled = false
 streamType = "webrtc"
 signalPort = 49221
 streamPort = 48021
-dynamicResize = true
+dynamicResize = false
 
 # Run loop rate-limiting to stabilize frame pacing and prevent GPU compute spikes
 [settings.app.runLoops.main]

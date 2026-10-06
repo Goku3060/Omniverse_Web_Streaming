@@ -1,8 +1,8 @@
-# Omniverse Web Streaming (Bidirectional WebRTC)
+# Omniverse Digital Twin Conveyor & Web Streaming
 
-A real-time, low-latency bidirectional WebRTC streaming architecture connecting a **React web client** to an **NVIDIA Omniverse Kit USD Viewer**.
+A real-time, low-latency bidirectional WebRTC streaming architecture connecting a **React Digital Twin dashboard** to an **NVIDIA Omniverse Kit PhysX Simulation**.
 
-The browser displays the Omniverse Kit viewport as an interactive WebRTC video stream and provides an action rail to author USD primitives dynamically. Commands travel bidirectionally across the WebRTC data channel, triggering server-side USD stage changes that immediately reflect in the streamed viewport.
+The browser displays the Omniverse Kit viewport as an interactive WebRTC video stream and provides logistics controls (Drop Package on Belt, Auto-Cycle, Belt Surface Velocity adjustment, Container Reset). Commands and physics telemetry travel bidirectionally across the WebRTC data channel in real time.
 
 ---
 
@@ -15,20 +15,20 @@ flowchart LR
     SDK[NVIDIA ov-web-rtc<br/>AppStreamer]
     Kit[Omniverse Kit Streaming App<br/>omni.kit.livestream.app]
     Bridge[USD Messaging Extension<br/>EventDispatcher]
-    Spawner[Cube Spawner Helper<br/>USD API]
-    Stage[Active USD Stage<br/>Poc_tes.usd]
+    Conveyor[Conveyor & Physics Engine<br/>PhysX Surface Velocity API]
+    Stage[Active USD Stage<br/>Conveyor_Simulation.usd]
 
-    User -->|Click Spawn Cube| React
-    React -->|spawnCubeRequest| SDK
+    User -->|Drop Package / Change Speed| React
+    React -->|dropPackageRequest / setSpeed| SDK
     SDK <-->|WebRTC Video + Data Channel| Kit
     Kit --> Bridge
-    Bridge -->|spawnCubeRequest| Spawner
-    Spawner -->|Define Cube + DisplayColor| Stage
-    Spawner -->|Frame Camera| Stage
-    Stage -->|Rendered Viewport Frame| Kit
-    Bridge -->|spawnCubeResult| SDK
+    Bridge -->|dispatch actions| Conveyor
+    Conveyor -->|Author RigidBody Boxes + Set Velocity| Stage
+    Stage -->|PhysX Simulation Updates| Conveyor
+    Conveyor -->|containerCountUpdate / arrivals| Bridge
+    Bridge -->|telemetry events| SDK
     SDK -->|onCustomEvent| React
-    Kit -->|NVENC H.264 Stream| SDK
+    Kit -->|NVENC H.264 Stream (720p)| SDK
     SDK -->|HTML5 Video Element| React
 ```
 
@@ -36,12 +36,12 @@ flowchart LR
 
 | Component | Path | Description |
 | :--- | :--- | :--- |
-| **React Web Client** | `Poc_test/` | Modern React UI powered by Vite, TypeScript, and `@nvidia/ov-web-rtc`. |
+| **React Digital Twin Client** | `Poc_test/` | Modern React UI powered by Vite, TypeScript, and `@nvidia/ov-web-rtc`. |
 | **Streaming App** | `kit-app-template/source/apps/my_company.my_usd_viewer_streaming.kit` | Kit application configured with WebRTC livestreaming, NVENC H.264 encoding, and run-loop rate-limiting. |
 | **Messaging Extension** | `kit-app-template/source/extensions/my_company.my_usd_viewer_messaging_extension` | Bridges WebRTC custom messages to Kit's event dispatcher. |
-| **Cube Spawner Extension** | `kit-app-template/source/extensions/my_company.my_python_ui_extension` | Authors colored cubes side by side and dynamically adjusts camera framing. |
+| **Conveyor Simulation Extension** | `kit-app-template/source/extensions/my_company.my_python_ui_extension` | Manages PhysX surface velocity, package spawning, and collection bin arrivals. |
 | **Viewer Setup Extension** | `kit-app-template/source/extensions/my_company.my_usd_viewer_setup_extension` | Loads USD stages and sets up default lighting and layout. |
-| **USD Demo Stage** | `Poc_tes.usd` | Sample USD stage configured for the streaming viewport. |
+| **USD Digital Twin Stage** | `Conveyor_Simulation.usd` | Modular industrial conveyor belt and collection bin stage. |
 
 ---
 
@@ -69,39 +69,42 @@ This project incorporates production-grade performance tuning based on official 
 
 ## Getting Started
 
-### 1. Build the Kit Streaming Application
+> [!TIP]
+> For detailed troubleshooting and GPU memory notes, see the full **[RUN_GUIDE.md](RUN_GUIDE.md)**.
 
-From the root directory:
+### Quick Start (One-Click)
 
+1. **Start Streaming Server**: Double-click `start_streaming_server.bat` in the root folder.
+2. **Start Web Client**: Double-click `start_web_client.bat` in the root folder.
+3. Open **[http://127.0.0.1:5173/](http://127.0.0.1:5173/)** in Google Chrome or Microsoft Edge.
+4. **Stop All**: Double-click `stop_all.bat` to cleanly terminate all processes when done.
+
+### Manual Terminal Commands
+
+#### 1. Build and Launch the Streaming Server
 ```powershell
 cd kit-app-template
 .\repo.bat build
-```
 
-### 2. Launch the Kit Streaming Server
-
-Start the headless streaming server loading the demo stage:
-
-```powershell
 & ".\_build\windows-x86_64\release\kit\kit.exe" `
   ".\_build\windows-x86_64\release\apps\my_company.my_usd_viewer_streaming.kit" `
   --no-window `
-  "--/app/auto_load_usd=..\Poc_tes.usd"
+  "--/app/auto_load_usd=..\Conveyor_Simulation.usd" `
+  "--/app/renderer/resolution/width=1280" `
+  "--/app/renderer/resolution/height=720" `
+  "--/app/window/width=1280" `
+  "--/app/window/height=720" `
+  "--/exts/omni.kit.livestream.app/primaryStream/dynamicResize=false"
 ```
 
-*Wait for `[Info] RTX ready` in the console.*
-
-### 3. Start the React Web Client
-
+#### 2. Start the React Web Client
 In a separate terminal:
-
 ```powershell
 cd Poc_test
 npm install
 npm run dev -- --host 127.0.0.1
 ```
-
-Open **[http://127.0.0.1:5173/](http://127.0.0.1:5173/)** in your browser (Google Chrome or Microsoft Edge recommended).
+Open **[http://127.0.0.1:5173/](http://127.0.0.1:5173/)** in your browser.
 
 ---
 

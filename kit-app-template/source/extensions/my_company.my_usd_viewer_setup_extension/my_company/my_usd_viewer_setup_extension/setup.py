@@ -54,9 +54,13 @@ class SetupExtension(omni.ext.IExt):
                     stage_url = arg
                     break
         if not stage_url:
-            conveyor_usda = Path("D:/Omniverse_learning/Conveyor_Simulation.usda")
-            if conveyor_usda.exists():
-                stage_url = str(conveyor_usda)
+            conveyor_usd = Path("D:/Omniverse_learning/Conveyor_Simulation.usd")
+            if conveyor_usd.exists():
+                stage_url = str(conveyor_usd)
+            else:
+                conveyor_usda = Path("D:/Omniverse_learning/Conveyor_Simulation.usda")
+                if conveyor_usda.exists():
+                    stage_url = str(conveyor_usda)
 
         # check if setup have benchmark macro file to activate - ignore setup
         # auto_load_usd name, in order to run proper benchmark.
