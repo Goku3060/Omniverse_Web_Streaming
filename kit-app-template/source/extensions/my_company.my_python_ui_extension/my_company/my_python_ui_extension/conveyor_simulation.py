@@ -161,12 +161,12 @@ def frame_conveyor_camera(stage: Usd.Stage):
         if cam_prim.IsValid():
             try:
                 cam_xform = UsdGeom.XformCommonAPI(cam_prim)
-                # Centered around X=20, elevated, capturing full conveyor from -370 to +450
+                # Centered around X=50, elevated, capturing full conveyor from -370 to +450 including bin at 416
                 if is_y_up:
-                    cam_xform.SetTranslate(Gf.Vec3d(20.0, 260.0, 480.0))
+                    cam_xform.SetTranslate(Gf.Vec3d(50.0, 270.0, 520.0))
                     cam_xform.SetRotate(Gf.Vec3f(-25.0, 0.0, 0.0))
                 else:
-                    cam_xform.SetTranslate(Gf.Vec3d(20.0, -480.0, 260.0))
+                    cam_xform.SetTranslate(Gf.Vec3d(50.0, -520.0, 270.0))
                     cam_xform.SetRotate(Gf.Vec3f(65.0, 0.0, 0.0))
                 break
             except Exception as e:

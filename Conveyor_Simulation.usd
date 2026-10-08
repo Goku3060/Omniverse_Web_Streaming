@@ -73,8 +73,8 @@ def Xform "World"
         float focalLength = 24
         float focusDistance = 400
         float fStop = 0
-        double3 xformOp:rotateXYZ = (-26, 0, 0)
-        double3 xformOp:translate = (50, 240, 360)
+        double3 xformOp:rotateXYZ = (-25, 0, 0)
+        double3 xformOp:translate = (50, 270, 520)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
     }
 
